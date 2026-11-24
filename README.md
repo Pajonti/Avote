@@ -10,8 +10,10 @@ groupe politique) avec une fiche de détail, alimentée par les données publiqu
 |----------|------|
 | `back/`  | API Spring Boot 4 (Java 25, Maven), migrations Flyway, cache Redis, ingestion des données |
 | `front/` | Application Vue 3 + Vite + TypeScript, servie par nginx (qui relaie `/api` vers le back) |
+| `postgres/` | Image PostgreSQL maison (base `postgres:18-alpine`) : `postgresql.conf` d'Avote (UTC, requêtes lentes journalisées), utilisateur non-root |
+| `redis/` | Image Redis maison (base `redis:8-alpine`) : cache pur, sans persistance, éviction LRU à 128 Mo, mot de passe obligatoire |
 
-Services de `docker-compose.yml` : `postgres`, `redis`, `back`, `front`. Chaque composant applicatif a
+Services de `docker-compose.yml` : `postgres`, `redis`, `back`, `front`. Chacun a son dossier et
 son `Dockerfile`. Le déploiement (GitHub Actions, ArgoCD, OpenBao) vit hors de ce dépôt.
 
 ### Sources de données (licences ouvertes)
