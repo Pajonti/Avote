@@ -1,0 +1,35 @@
+name: ci
+on:
+  pull_request:
+  push:
+
+jobs:
+  front: { uses: ./.github/workflows/build-image.yml, with: { image: front, context: ./front, test: vitest } }
+  back:  { uses: ./.github/workflows/build-image.yml, with: { image: back,  context: ./back,  test: maven } }
+  db:    { uses: ./.github/workflows/build-image.yml, with: { image: db,    context: ./postgres } }
+  cache: { uses: ./.github/workflows/build-image.yml, with: { image: cache, context: ./redis } }
+
+  push-front:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: front }
+    permissions: { contents: read, packages: write }
+  push-back:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: back }
+    permissions: { contents: read, packages: write }
+  push-db:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: db }
+    permissions: { contents: read, packages: write }
+  push-cache:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: cache }
+    permissions: { contents: read, packages: write }

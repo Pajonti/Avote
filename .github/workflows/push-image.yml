@@ -1,0 +1,34 @@
+name: push-image
+on:
+  workflow_call:
+    inputs:
+      image: { required: true, type: string }
+    outputs:
+      digest:
+        value: ${{ jobs.push.outputs.digest }}
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    outputs:
+      digest: ${{ steps.d.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-${{ inputs.image }}
+          path: ${{ runner.temp }}
+      - run: docker load -i "${{ runner.temp }}/image.tar"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: d
+        env:
+          REF: ghcr.io/pajonti/avote-${{ inputs.image }}
+        run: |
+          docker tag avote-${{ inputs.image }}:ci "$REF:${{ github.sha }}"
+          docker push "$REF:${{ github.sha }}"
+          DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$REF:${{ github.sha }}" | cut -d@ -f2)
+          [ -n "$DIGEST" ] || { echo "digest vide" >&2; exit 1; }
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"

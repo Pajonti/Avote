@@ -1,0 +1,45 @@
+name: build-image
+on:
+  workflow_call:
+    inputs:
+      image:   { required: true, type: string }                   # front | back | db | cache
+      context: { required: true, type: string }
+      test:    { required: false, type: string, default: none }   # maven | vitest | none
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - if: inputs.test == 'maven'
+        uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25', cache: maven }
+      - if: inputs.test == 'maven'
+        run: mvn -B verify
+        working-directory: ${{ inputs.context }}
+
+      - if: inputs.test == 'vitest'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ${{ inputs.context }}/package-lock.json
+      - if: inputs.test == 'vitest'
+        run: npm ci && npm test
+        working-directory: ${{ inputs.context }}
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          push: false
+          tags: avote-${{ inputs.image }}:ci
+          labels: org.opencontainers.image.source=https://github.com/Pajonti/Avote
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          cache-from: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ inputs.image }}
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 1
