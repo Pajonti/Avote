@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: avote-back
+  config:
+    # Dev local : relit le .env de la racine. Absent dans Docker/k8s (variables d'environnement).
+    import: "optional:file:../.env[.properties]"
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:avote}
+    username: ${POSTGRES_USER:avote}
+    password: ${POSTGRES_PASSWORD:}
+  data:
+    redis:
+      host: localhost
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  cache:
+    type: redis
+  http:
+    client:
+      connect-timeout: 10s
+      read-timeout: 60s
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        # Redis volontairement exclu : l'API reste utilisable sans cache.
+        readiness:
+          include: readinessState,db
+
+avote:
+  ingestion:
+    cron: "0 0 4 * * *"
+    zone: Europe/Paris
+    run-on-startup-if-empty: true
+    # Refuse un import dont la taille tombe sous ce ratio des effectifs actifs connus
+    min-ratio: 0.5
+  cache:
+    ttl: 1h
+  sources:
+    user-agent: "Mozilla/5.0 (compatible; avote-open-data-client/0.1)"
+    an-url: https://data.assemblee-nationale.fr/static/openData/repository/17/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip
+    senat-list-url: https://www.senat.fr/api-senat/senateurs.json
+    senat-general-url: https://data.senat.fr/data/senateurs/ODSEN_GENERAL.json
+    ep-base-url: https://data.europarl.europa.eu/api/v2

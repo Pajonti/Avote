@@ -1,0 +1,77 @@
+name: ci
+on:
+  pull_request:
+  push:
+
+jobs:
+  front: { uses: ./.github/workflows/build-image.yml, with: { image: front, context: ./front, test: vitest } }
+  back:  { uses: ./.github/workflows/build-image.yml, with: { image: back,  context: ./back,  test: maven } }
+  db:    { uses: ./.github/workflows/build-image.yml, with: { image: db,    context: ./postgres } }
+  cache: { uses: ./.github/workflows/build-image.yml, with: { image: cache, context: ./redis } }
+
+  push-front:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: front }
+    permissions: { contents: read, packages: write }
+  push-back:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: back }
+    permissions: { contents: read, packages: write }
+  push-db:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: db }
+    permissions: { contents: read, packages: write }
+  push-cache:
+    if: github.event_name == 'push'
+    needs: [front, back, db, cache]
+    uses: ./.github/workflows/push-image.yml
+    with: { image: cache }
+    permissions: { contents: read, packages: write }
+
+  update-digests:
+    if: github.event_name == 'push'
+    needs: [push-front, push-back, push-db, push-cache]
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    # Un seul déploiement à la fois ; une exécution en attente est remplacée par la plus récente.
+    concurrency: { group: update-digests, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Pajonti/indus-scripts
+          ref: master
+          path: gitops
+          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+
+      - name: Réécrire les 4 digests
+        working-directory: gitops
+        env:
+          FRONT: ${{ needs.push-front.outputs.digest }}
+          BACK: ${{ needs.push-back.outputs.digest }}
+          DB: ${{ needs.push-db.outputs.digest }}
+          CACHE: ${{ needs.push-cache.outputs.digest }}
+        run: |
+          set -euo pipefail
+          update() {
+            [[ "$2" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "digest invalide pour $1 : '$2'" >&2; exit 1; }
+            file="apps/avote/$1.yaml"
+            sed -i -E "s|(image: ghcr\.io/pajonti/avote-$1)[:@][^[:space:]]+|\1@$2|" "$file"
+            grep -q "avote-$1@$2" "$file" || { echo "image $1 non mise à jour" >&2; exit 1; }
+          }
+          update front "$FRONT"; update back "$BACK"; update db "$DB"; update cache "$CACHE"
+
+      - name: Un seul commit
+        working-directory: gitops
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then echo "Digests inchangés, rien à commiter"; exit 0; fi
+          git commit -am "🔧 chore(avote): update image digests" -m "Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          git pull --rebase origin master
+          git push origin HEAD:master

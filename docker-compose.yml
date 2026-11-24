@@ -1,0 +1,75 @@
+name: avote
+
+services:
+  postgres:
+    build:
+      context: ./postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?voir .env-example}
+      POSTGRES_USER: ${POSTGRES_USER:?voir .env-example}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?voir .env-example}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    build:
+      context: ./redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?voir .env-example}
+
+  back:
+    build:
+      context: ./back
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      AVOTE_INGESTION_CRON: ${AVOTE_INGESTION_CRON:-0 0 4 * * *}
+      AVOTE_INGESTION_RUN_ON_STARTUP_IF_EMPTY: ${AVOTE_INGESTION_RUN_ON_STARTUP_IF_EMPTY:-true}
+    ports:
+      - "127.0.0.1:${BACK_PORT:-8081}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/readiness | grep -q UP"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  front:
+    build:
+      context: ./front
+    restart: unless-stopped
+    depends_on:
+      back:
+        condition: service_healthy
+    environment:
+      BACK_URL: http://back:8080
+    ports:
+      - "${FRONT_PORT:-8080}:8080"
+
+volumes:
+  postgres-data:
